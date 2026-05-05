@@ -1,0 +1,24 @@
+{
+    # Global options
+    email {$ACME_EMAIL}
+}
+
+{$DOMAIN:localhost} {
+    # Rate limiting: 100 req/min per IP
+    rate_limit {remote_host} 100r/m
+
+    # Security headers
+    header {
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        X-XSS-Protection          "1; mode=block"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    reverse_proxy api:8000
+
+    # Automatic HTTPS (Caddy handles cert via Let's Encrypt)
+    encode gzip
+}

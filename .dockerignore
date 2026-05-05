@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+backups/
+terraform/
+scripts/
+tests/
+*.md
+Makefile
