@@ -7,7 +7,7 @@ DEPLOY_DIR="${DEPLOY_DIR:-/opt/statuspulse}"
 GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/jatavkapil123/statuspulse}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 HEALTH_URL="${HEALTH_URL:-http://localhost:8000/health}"
-LOG_FILE="/var/log/statuspulse-deploy.log"
+LOG_FILE="${DEPLOY_DIR}/deploy.log"
 ROLLBACK="${1:-}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
