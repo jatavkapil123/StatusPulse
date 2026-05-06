@@ -119,53 +119,57 @@ services:
 pathlib.Path("/opt/statuspulse/docker-compose.yml").write_text(content)
 PYEOF
 
-            # Write deploy script (no indentation inside heredoc to avoid flag parsing issues)
-            cat > /opt/statuspulse/scripts/deploy.sh << 'DEPLOYSCRIPT'
-            #!/bin/bash
-            set -euo pipefail
-            DEPLOY_DIR="${DEPLOY_DIR:-/opt/statuspulse}"
-            GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/jatavkapil123/statuspulse}"
-            IMAGE_TAG="${IMAGE_TAG:-latest}"
-            HEALTH_URL="${HEALTH_URL:-http://localhost:8000/health}"
-            ROLLBACK="${1:-}"
-            log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-            health_check() {
-            for i in $(seq 1 10); do
-            STATUS=$(curl -sf "$HEALTH_URL" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "failed")
-            if [ "$STATUS" = "healthy" ]; then log "Health check passed."; return 0; fi
-            log "Attempt $i/10 failed, retrying..."; sleep 5
-            done
-            return 1
-            }
-            cd "$DEPLOY_DIR"
-            if [ "$ROLLBACK" = "rollback" ]; then
-            if [ -f .previous_tag ]; then
-            PREV_TAG=$(cat .previous_tag)
-            log "Rolling back to $PREV_TAG"
-            export IMAGE_TAG="$PREV_TAG"
-            docker compose up -d api
-            health_check && log "Rollback successful." || { log "Rollback failed."; exit 1; }
-            else
-            log "No previous tag found."; exit 1
-            fi
-            exit 0
-            fi
-            log "Deploy started: $GHCR_IMAGE:$IMAGE_TAG"
-            CURRENT_TAG=$(cat .current_tag 2>/dev/null || echo "latest")
-            echo "$CURRENT_TAG" > .previous_tag
-            echo "$IMAGE_TAG" > .current_tag
-            docker pull "$GHCR_IMAGE:$IMAGE_TAG"
-            docker compose up -d --no-deps api
-            if health_check; then
-            log "Deploy successful: $IMAGE_TAG"
-            else
-            log "Health check failed, rolling back to $CURRENT_TAG"
-            export IMAGE_TAG="$CURRENT_TAG"
-            docker compose up -d --no-deps api
-            health_check && log "Rollback succeeded." || log "CRITICAL: Rollback also failed."
-            exit 1
-            fi
-            DEPLOYSCRIPT
+            # Write deploy script via python3 to avoid heredoc indentation issues
+            python3 - << 'PYEOF'
+import textwrap, pathlib
+content = textwrap.dedent("""
+#!/bin/bash
+set -euo pipefail
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/statuspulse}"
+GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/jatavkapil123/statuspulse}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+HEALTH_URL="${HEALTH_URL:-http://localhost:8000/health}"
+ROLLBACK="${1:-}"
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+health_check() {
+  for i in $(seq 1 10); do
+    STATUS=$(curl -sf "$HEALTH_URL" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "failed")
+    if [ "$STATUS" = "healthy" ]; then log "Health check passed."; return 0; fi
+    log "Attempt $i/10 failed, retrying..."; sleep 5
+  done
+  return 1
+}
+cd "$DEPLOY_DIR"
+if [ "$ROLLBACK" = "rollback" ]; then
+  if [ -f .previous_tag ]; then
+    PREV_TAG=$(cat .previous_tag)
+    log "Rolling back to $PREV_TAG"
+    export IMAGE_TAG="$PREV_TAG"
+    docker compose up -d api
+    health_check && log "Rollback successful." || { log "Rollback failed."; exit 1; }
+  else
+    log "No previous tag found."; exit 1
+  fi
+  exit 0
+fi
+log "Deploy started: $GHCR_IMAGE:$IMAGE_TAG"
+CURRENT_TAG=$(cat .current_tag 2>/dev/null || echo "latest")
+echo "$CURRENT_TAG" > .previous_tag
+echo "$IMAGE_TAG" > .current_tag
+docker pull "$GHCR_IMAGE:$IMAGE_TAG"
+docker compose up -d --no-deps api
+if health_check; then
+  log "Deploy successful: $IMAGE_TAG"
+else
+  log "Health check failed, rolling back to $CURRENT_TAG"
+  export IMAGE_TAG="$CURRENT_TAG"
+  docker compose up -d --no-deps api
+  health_check && log "Rollback succeeded." || log "CRITICAL: Rollback also failed."
+  exit 1
+fi
+""").lstrip()
+pathlib.Path("/opt/statuspulse/scripts/deploy.sh").write_text(content)
+PYEOF
 
             chmod +x /opt/statuspulse/scripts/deploy.sh
 
