@@ -56,6 +56,15 @@ jobs:
       - name: Run integration tests
         run: bash tests/test_integration.sh
 
+      - name: Trivy scan (image)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: statuspulse_api:latest
+          format: table
+          exit-code: '0'
+          severity: CRITICAL,HIGH
+          output: tests/results/trivy-report.txt
+
       - name: Tear down stack
         if: always()
         run: docker compose down --volumes

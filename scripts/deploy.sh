@@ -1,9 +1,10 @@
 #!/bin/bash
 # deploy.sh — zero-downtime deploy with automatic rollback
+# Idempotent: safe to run repeatedly
 set -euo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/statuspulse}"
-GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/your-org/statuspulse}"
+GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/jatavkapil123/statuspulse}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 HEALTH_URL="${HEALTH_URL:-http://localhost:8000/health}"
 LOG_FILE="/var/log/statuspulse-deploy.log"
@@ -19,7 +20,7 @@ health_check() {
       log "Health check passed."
       return 0
     fi
-    log "Health check attempt $i/$retries failed (status=$STATUS), retrying..."
+    log "Health check attempt $i/$retries failed (status=$STATUS), retrying in 5s..."
     sleep 5
   done
   return 1
@@ -33,9 +34,8 @@ if [ "$ROLLBACK" = "rollback" ]; then
   if [ -f .previous_tag ]; then
     PREV_TAG=$(cat .previous_tag)
     log "Rolling back to $GHCR_IMAGE:$PREV_TAG"
-    IMAGE_TAG="$PREV_TAG"
-    sed -i "s|image:.*|image: $GHCR_IMAGE:$IMAGE_TAG|g" docker-compose.yml
-    docker-compose up -d api
+    export IMAGE_TAG="$PREV_TAG"
+    docker compose up -d --no-deps api
     if health_check; then
       log "Rollback successful."
     else
@@ -53,29 +53,26 @@ fi
 log "=== Deploy started: $GHCR_IMAGE:$IMAGE_TAG ==="
 
 # Save current tag for rollback
-CURRENT_TAG=$(grep -oP '(?<=:)[^"]+$' docker-compose.yml 2>/dev/null | head -1 || echo "latest")
+CURRENT_TAG=$(cat .current_tag 2>/dev/null || echo "latest")
 echo "$CURRENT_TAG" > .previous_tag
+echo "$IMAGE_TAG"   > .current_tag
 log "Previous tag saved: $CURRENT_TAG"
 
 # Pull new image
 log "Pulling $GHCR_IMAGE:$IMAGE_TAG ..."
 docker pull "$GHCR_IMAGE:$IMAGE_TAG"
 
-# Update compose to use new tag
-sed -i "s|image:.*statuspulse.*|image: $GHCR_IMAGE:$IMAGE_TAG|g" docker-compose.yml
-
-# Start new container (zero-downtime: compose replaces one at a time)
+# Start new container (--no-deps so db/redis are untouched)
 log "Starting new container..."
-docker-compose up -d --no-deps api
+docker compose up -d --no-deps api
 
-# Health check
+# Health check — pass → done, fail → rollback
 if health_check; then
-  log "Deploy successful: $IMAGE_TAG"
+  log "=== Deploy successful: $IMAGE_TAG ==="
 else
   log "Health check failed — initiating rollback to $CURRENT_TAG"
-  IMAGE_TAG="$CURRENT_TAG"
-  sed -i "s|image:.*statuspulse.*|image: $GHCR_IMAGE:$IMAGE_TAG|g" docker-compose.yml
-  docker-compose up -d --no-deps api
+  export IMAGE_TAG="$CURRENT_TAG"
+  docker compose up -d --no-deps api
   if health_check; then
     log "Rollback to $CURRENT_TAG succeeded."
   else

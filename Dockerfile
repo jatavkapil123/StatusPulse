@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
 
+# Apply latest OS security patches (fixes openssl, libc6, libsqlite3, dpkg CVEs)
+RUN apt-get update -qq && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
 # Non-root user
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
