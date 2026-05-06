@@ -7,8 +7,12 @@ DEPLOY_DIR="${DEPLOY_DIR:-/opt/statuspulse}"
 GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/jatavkapil123/statuspulse}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 HEALTH_URL="${HEALTH_URL:-http://localhost:8000/health}"
-LOG_FILE="${DEPLOY_DIR}/deploy.log"
 ROLLBACK="${1:-}"
+
+# Ensure deploy dir and log file exist before any log() call
+mkdir -p "${DEPLOY_DIR}/scripts"
+LOG_FILE="${DEPLOY_DIR}/deploy.log"
+touch "$LOG_FILE" 2>/dev/null || LOG_FILE="/tmp/statuspulse-deploy.log"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
@@ -27,10 +31,6 @@ health_check() {
 }
 
 cd "$DEPLOY_DIR"
-
-# Ensure log directory exists and is writable
-mkdir -p "$DEPLOY_DIR"
-touch "$LOG_FILE" 2>/dev/null || LOG_FILE="/tmp/statuspulse-deploy.log"
 
 # ── Rollback mode ──────────────────────────────────────────────────────────────
 if [ "$ROLLBACK" = "rollback" ]; then

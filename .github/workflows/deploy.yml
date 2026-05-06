@@ -41,7 +41,9 @@ jobs:
       - name: Encode files for transfer
         id: encode
         run: |
-          COMPOSE=$(base64 -w0 docker-compose.yml)
+          # Build a server-side compose without 'build:' context (server has no source)
+          sed '/^\s*build:/d' docker-compose.yml > /tmp/server-compose.yml
+          COMPOSE=$(base64 -w0 /tmp/server-compose.yml)
           echo "compose=${COMPOSE}" >> $GITHUB_OUTPUT
 
           DEPLOY=$(base64 -w0 scripts/deploy.sh)
