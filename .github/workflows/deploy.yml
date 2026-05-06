@@ -116,8 +116,13 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_SSH_PORT }}
+          envs: DEPLOY_B64
           script: |
+            echo "$DEPLOY_B64" | base64 -d > /opt/statuspulse/scripts/deploy.sh
+            chmod +x /opt/statuspulse/scripts/deploy.sh
             bash /opt/statuspulse/scripts/deploy.sh rollback
+        env:
+          DEPLOY_B64: ${{ steps.encode.outputs.deploy }}
 
       - name: Comment on failure
         if: failure()

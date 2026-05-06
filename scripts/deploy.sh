@@ -28,6 +28,10 @@ health_check() {
 
 cd "$DEPLOY_DIR"
 
+# Ensure log directory exists and is writable
+mkdir -p "$DEPLOY_DIR"
+touch "$LOG_FILE" 2>/dev/null || LOG_FILE="/tmp/statuspulse-deploy.log"
+
 # ── Rollback mode ──────────────────────────────────────────────────────────────
 if [ "$ROLLBACK" = "rollback" ]; then
   log "=== ROLLBACK triggered ==="
