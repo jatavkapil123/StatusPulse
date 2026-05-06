@@ -35,10 +35,10 @@ jobs:
         run: cp .env.example .env
 
       - name: Build Docker image
-        run: docker-compose build
+        run: docker compose build
 
       - name: Start full stack
-        run: docker-compose up -d
+        run: docker compose up -d
 
       - name: Wait for services to be healthy
         run: |
@@ -58,7 +58,7 @@ jobs:
 
       - name: Tear down stack
         if: always()
-        run: docker-compose down --volumes
+        run: docker compose down --volumes
 
       - name: Upload test results
         if: always()
