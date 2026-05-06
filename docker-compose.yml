@@ -49,8 +49,8 @@ services:
       start_period: 5s
 
   api:
+    image: ${GHCR_IMAGE:-statuspulse-api}:${IMAGE_TAG:-latest}
     build: .
-    image: statuspulse-api:latest
     env_file: .env
     ports:
       - "${APP_PORT:-8000}:8000"
