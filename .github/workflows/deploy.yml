@@ -38,6 +38,17 @@ jobs:
             ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:${{ github.sha }}
 
+      - name: Copy app files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_SSH_PORT }}
+          source: "docker-compose.yml,.env.example"
+          target: /opt/statuspulse/
+          overwrite: true
+
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -46,8 +57,80 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_SSH_PORT }}
           script: |
+            # Install Docker if not present
+            if ! command -v docker &> /dev/null; then
+              sudo apt-get update -qq
+              sudo apt-get install -y docker.io docker-compose-plugin
+              sudo usermod -aG docker $USER
+            fi
+
+            # Setup app directory
+            sudo mkdir -p /opt/statuspulse/scripts
+            sudo chown -R $USER:$USER /opt/statuspulse
+
+            # Write deploy script inline
+            cat > /opt/statuspulse/scripts/deploy.sh << 'DEPLOYSCRIPT'
+            #!/bin/bash
+            set -euo pipefail
+            DEPLOY_DIR="${DEPLOY_DIR:-/opt/statuspulse}"
+            GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/jatavkapil123/statuspulse}"
+            IMAGE_TAG="${IMAGE_TAG:-latest}"
+            HEALTH_URL="${HEALTH_URL:-http://localhost:8000/health}"
+            ROLLBACK="${1:-}"
+
+            log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+
+            health_check() {
+              for i in $(seq 1 10); do
+                STATUS=$(curl -sf "$HEALTH_URL" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "failed")
+                if [ "$STATUS" = "healthy" ]; then log "Health check passed."; return 0; fi
+                log "Attempt $i/10 failed, retrying..."; sleep 5
+              done
+              return 1
+            }
+
+            cd "$DEPLOY_DIR"
+
+            if [ "$ROLLBACK" = "rollback" ]; then
+              if [ -f .previous_tag ]; then
+                PREV_TAG=$(cat .previous_tag)
+                log "Rolling back to $PREV_TAG"
+                docker pull "$GHCR_IMAGE:$PREV_TAG"
+                IMAGE_TAG="$PREV_TAG" docker compose up -d api
+                health_check && log "Rollback successful." || { log "Rollback failed."; exit 1; }
+              else
+                log "No previous tag found."; exit 1
+              fi
+              exit 0
+            fi
+
+            log "Deploy started: $GHCR_IMAGE:$IMAGE_TAG"
+            CURRENT_TAG=$(cat .current_tag 2>/dev/null || echo "latest")
+            echo "$CURRENT_TAG" > .previous_tag
+            echo "$IMAGE_TAG" > .current_tag
+
+            docker pull "$GHCR_IMAGE:$IMAGE_TAG"
+            GHCR_IMAGE="$GHCR_IMAGE" IMAGE_TAG="$IMAGE_TAG" docker compose up -d --no-deps api
+
+            if health_check; then
+              log "Deploy successful: $IMAGE_TAG"
+            else
+              log "Health check failed, rolling back to $CURRENT_TAG"
+              GHCR_IMAGE="$GHCR_IMAGE" IMAGE_TAG="$CURRENT_TAG" docker compose up -d --no-deps api
+              health_check && log "Rollback succeeded." || log "CRITICAL: Rollback also failed."
+              exit 1
+            fi
+            DEPLOYSCRIPT
+
+            chmod +x /opt/statuspulse/scripts/deploy.sh
+
+            # Copy docker-compose and env if not present
+            [ -f /opt/statuspulse/docker-compose.yml ] || touch /opt/statuspulse/docker-compose.yml
+            [ -f /opt/statuspulse/.env ] || cp /opt/statuspulse/.env.example /opt/statuspulse/.env
+
+            # Run deploy
             export IMAGE_TAG=${{ github.sha }}
-            export GHCR_IMAGE=${{ steps.image.outputs.name }}
+            export GHCR_IMAGE=ghcr.io/jatavkapil123/statuspulse
             bash /opt/statuspulse/scripts/deploy.sh
 
       - name: Post-deployment health check
