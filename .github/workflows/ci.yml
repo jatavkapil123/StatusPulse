@@ -59,7 +59,7 @@ jobs:
       - name: Trivy scan (image)
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: statuspulse_api:latest
+          image-ref: statuspulse-api:latest
           format: table
           exit-code: '0'
           severity: CRITICAL,HIGH
