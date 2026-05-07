@@ -236,53 +236,64 @@ API docs available at: `http://localhost:8000/docs`
 
 ---
 
-## 7. Infrastructure — Terraform on AWS
+## 7. Infrastructure — Terraform on Azure
 
-The `terraform/` directory provisions a production-ready EC2 instance.
+The `terraform/` directory provisions the complete production infrastructure on Azure.
 
 ### Resources Created
 
 | Resource | Details |
 |---|---|
-| `aws_security_group` | Allows custom SSH port, 80, 443. Denies all other inbound. |
-| `aws_instance` | Ubuntu 22.04, t3.micro, 20GB gp3, bootstrapped via userdata |
-| `aws_eip` | Static Elastic IP attached to the instance |
+| `azurerm_resource_group` | Container for all resources |
+| `azurerm_virtual_network` | `10.1.0.0/16` |
+| `azurerm_subnet` | `10.1.0.0/24` |
+| `azurerm_public_ip` | Static, Standard SKU |
+| `azurerm_network_security_group` | Allows SSH, 80, 443, 3001. Denies all other inbound. |
+| `azurerm_network_interface` | Connects VM to subnet + public IP + NSG |
+| `azurerm_linux_virtual_machine` | Ubuntu 24.04 LTS, Standard_B2as_v2, 30GB Premium SSD |
+| `azurerm_dns_a_record` | Optional — only created when `dns_zone_name` is set |
 
 ### Server Bootstrap (`userdata.sh.tpl`)
 
-On first boot the server automatically:
-1. Creates a non-root `deploy` user
-2. Hardens SSH — custom port, no root login, no password auth
-3. Configures UFW firewall (deny inbound by default, allow SSH/80/443)
-4. Installs Docker CE + docker-compose-plugin
-5. Creates 1GB swap file
-6. Enables unattended security upgrades
-7. Creates `/opt/statuspulse` owned by the deploy user
+On first boot the VM automatically:
+1. Installs Docker CE + docker-compose-plugin
+2. Hardens SSH (configurable port, no root login, max 3 auth attempts)
+3. Configures UFW firewall (deny all inbound except SSH/80/443/3001)
+4. Creates 2GB swap file
+5. Enables unattended security upgrades
+6. Creates `/opt/statuspulse/` directory structure
+7. Installs cron jobs (daily backup at 2am, health monitor every 5 min)
+8. Starts Uptime Kuma on port 3001
 
 ### Provisioning
 
 ```bash
 cd terraform
 terraform init
-terraform apply -var="key_name=your-ec2-keypair"
+terraform apply -var="admin_password=YourStr0ng!Pass"
 ```
 
 Outputs:
 ```
-server_ip   = "x.x.x.x"
-ssh_command = "ssh -p 2222 deploy@x.x.x.x"
+server_ip      = "4.186.31.153"
+ssh_command    = "ssh -p 22 statusplus@4.186.31.153"
+resource_group = "statuspulse-rg"
+app_url        = "http://4.186.31.153"
 ```
 
 ### Variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `region` | `us-east-1` | AWS region |
-| `ami` | Ubuntu 22.04 (us-east-1) | AMI ID |
-| `instance_type` | `t3.micro` | EC2 instance type |
-| `key_name` | required | EC2 key pair name |
-| `ssh_port` | `2222` | Hardened SSH port |
-| `deploy_user` | `deploy` | Non-root deploy user |
+| `location` | `East US` | Azure region |
+| `resource_group_name` | `statuspulse-rg` | Resource group name |
+| `vm_size` | `Standard_B2as_v2` | VM size (2 vCPU, 8GB RAM) |
+| `admin_username` | `statusplus` | VM admin username |
+| `admin_password` | required | VM admin password (sensitive) |
+| `ssh_port` | `22` | SSH port |
+| `ssh_source_cidr` | `*` | Restrict SSH to your IP for hardening |
+| `dns_zone_name` | `""` | Azure DNS zone (leave empty to skip DNS record) |
+| `dns_label` | `""` | Azure public IP DNS label for free cloudapp.azure.com hostname |
 
 ---
 
@@ -560,21 +571,37 @@ Rate limiting: 100 requests/minute per IP.
 
 ### Backup (`scripts/backup.sh`)
 
+- Reads DB credentials from `/opt/statuspulse/.env` automatically
+- Verifies the `db` container is running before attempting dump
 - Dumps PostgreSQL via `pg_dump` inside the running container
 - Compresses with gzip
-- Saves to `/opt/statuspulse/backups/`
+- Saves to `/opt/statuspulse/backups/` with filename `statuspulse_db_YYYY-MM-DD_HHMMSS.sql.gz`
+- Validates the backup file is non-empty (exits with error if pg_dump failed silently)
 - Keeps the last 7 backups (older ones deleted automatically)
-- Optionally uploads to S3 if `$S3_BUCKET` is set
+- Optionally uploads to **Azure Blob Storage** if `$AZURE_STORAGE_ACCOUNT` is set
+- Optionally uploads to **S3** if `$S3_BUCKET` is set
+- All actions logged to `/opt/statuspulse/backups/backup.log`
 
 ```bash
 # Manual run
 bash scripts/backup.sh
 
-# Automated — daily at 2am
-# 0 2 * * * /opt/statuspulse/scripts/backup.sh
+# Automated — installed by Terraform bootstrap, daily at 2am
+# /etc/cron.d/statuspulse-backup
+# 0 2 * * * statusplus /opt/statuspulse/scripts/backup.sh
 ```
 
 Backup filename format: `statuspulse_db_YYYY-MM-DD_HHMMSS.sql.gz`
+
+### Azure Blob upload (optional)
+
+```bash
+# Set in .env or environment
+AZURE_STORAGE_ACCOUNT=mystorageaccount
+AZURE_CONTAINER=statuspulse-backups
+```
+
+Requires `az` CLI installed and authenticated (`az login` or managed identity).
 
 ### Restore
 

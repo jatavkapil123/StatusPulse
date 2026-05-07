@@ -71,24 +71,21 @@ API docs: http://localhost:8000/docs
 ## Deploy to Production
 
 ### Prerequisites
-- A server provisioned via Terraform (see `terraform/`)
-- Domain pointing to server IP
+- A server provisioned via Terraform on Azure (see `terraform/`)
+- Domain pointing to server IP (optional)
 - GitHub Secrets configured (see CI/CD section)
 
 ```bash
 # Provision server
 cd terraform
 terraform init
-terraform apply -var="key_name=your-key-pair"
+terraform apply -var="admin_password=YourStr0ng!Pass"
 
-# Copy files to server
-scp -P 2222 -r . deploy@<server-ip>:/opt/statuspulse/
-
-# On server: set .env, then start
-cd /opt/statuspulse
-cp .env.example .env && nano .env
-docker compose up -d
+# Get the server IP
+terraform output server_ip
 ```
+
+The VM bootstraps itself automatically — Docker, firewall, swap, cron jobs, and Uptime Kuma are all installed on first boot. Push to `main` to trigger the deploy pipeline.
 
 ## CI/CD Pipeline
 
