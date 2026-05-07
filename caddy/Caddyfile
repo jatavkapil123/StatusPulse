@@ -1,9 +1,9 @@
 {
     # Global options
-    email {$ACME_EMAIL}
+    email admin@statuspulsekapil.duckdns.org
 }
 
-{$DOMAIN:localhost} {
+statuspulsekapil.duckdns.org {
     # Rate limiting: 100 req/min per IP
     rate_limit {remote_host} 100r/m
 
