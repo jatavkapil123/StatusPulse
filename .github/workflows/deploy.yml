@@ -62,8 +62,12 @@ jobs:
           DEPLOY_B64: ${{ steps.encode.outputs.deploy }}
           IMAGE_TAG: ${{ github.sha }}
           GHCR_IMAGE: ghcr.io/jatavkapil123/statuspulse
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash << 'ENDSSH'
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
+            "COMPOSE_B64='$COMPOSE_B64' DEPLOY_B64='$DEPLOY_B64' IMAGE_TAG='$IMAGE_TAG' GHCR_IMAGE='$GHCR_IMAGE' bash -s" << 'ENDSSH'
             # Install Docker if not present
             if ! command -v docker &> /dev/null; then
               sudo apt-get update -qq
@@ -118,8 +122,12 @@ jobs:
         if: failure()
         env:
           DEPLOY_B64: ${{ steps.encode.outputs.deploy }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash << 'ENDSSH'
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_B64='$DEPLOY_B64' bash -s" << 'ENDSSH'
             echo "$DEPLOY_B64" | base64 -d > /opt/statuspulse/scripts/deploy.sh
             chmod +x /opt/statuspulse/scripts/deploy.sh
             cd /opt/statuspulse && bash scripts/deploy.sh rollback
