@@ -5,7 +5,7 @@ variable "location" {
 
 variable "resource_group_name" {
   description = "Name of the Azure resource group"
-  default     = "statuspulse-rg"
+  default     = "statuspulse-rg1"
 }
 
 variable "project_name" {
