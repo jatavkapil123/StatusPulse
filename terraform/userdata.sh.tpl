@@ -50,6 +50,11 @@ sed -i "s/^Port 22$/Port ${ssh_port}/" /etc/ssh/sshd_config
 sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/^X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config
+# Enable password authentication for GitHub Actions deploy
+sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^#PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+grep -q "^PasswordAuthentication" /etc/ssh/sshd_config \
+  || echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 # Limit auth attempts
 grep -q "^MaxAuthTries" /etc/ssh/sshd_config \
   && sed -i 's/^MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config \
