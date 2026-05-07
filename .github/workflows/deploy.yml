@@ -49,15 +49,21 @@ jobs:
           DEPLOY=$(base64 -w0 scripts/deploy.sh)
           echo "deploy=${DEPLOY}" >> $GITHUB_OUTPUT
 
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
       - name: Setup server and deploy
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_SSH_PORT }}
-          envs: COMPOSE_B64,DEPLOY_B64,IMAGE_TAG,GHCR_IMAGE
-          script: |
+        env:
+          COMPOSE_B64: ${{ steps.encode.outputs.compose }}
+          DEPLOY_B64: ${{ steps.encode.outputs.deploy }}
+          IMAGE_TAG: ${{ github.sha }}
+          GHCR_IMAGE: ghcr.io/jatavkapil123/statuspulse
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash << 'ENDSSH'
             # Install Docker if not present
             if ! command -v docker &> /dev/null; then
               sudo apt-get update -qq
@@ -78,18 +84,16 @@ jobs:
             [ -f /opt/statuspulse/.env ] || touch /opt/statuspulse/.env
 
             # Run deploy
+            export IMAGE_TAG="$IMAGE_TAG"
+            export GHCR_IMAGE="$GHCR_IMAGE"
             cd /opt/statuspulse && bash scripts/deploy.sh
-        env:
-          COMPOSE_B64: ${{ steps.encode.outputs.compose }}
-          DEPLOY_B64: ${{ steps.encode.outputs.deploy }}
-          IMAGE_TAG: ${{ github.sha }}
-          GHCR_IMAGE: ghcr.io/jatavkapil123/statuspulse
+          ENDSSH
 
       - name: Post-deployment health check
         id: health
         run: |
           sleep 10
-          STATUS=$(curl -sf https://${{ secrets.DEPLOY_HOST }}/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null || echo "failed")
+          STATUS=$(curl -sf http://${{ secrets.DEPLOY_HOST }}:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null || echo "failed")
           echo "status=$STATUS" >> $GITHUB_OUTPUT
           if [ "$STATUS" != "healthy" ]; then
             echo "Health check failed: $STATUS"
@@ -112,19 +116,14 @@ jobs:
 
       - name: Notify failure and rollback
         if: failure()
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_SSH_PORT }}
-          envs: DEPLOY_B64
-          script: |
-            echo "$DEPLOY_B64" | base64 -d > /opt/statuspulse/scripts/deploy.sh
-            chmod +x /opt/statuspulse/scripts/deploy.sh
-            bash /opt/statuspulse/scripts/deploy.sh rollback
         env:
           DEPLOY_B64: ${{ steps.encode.outputs.deploy }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash << 'ENDSSH'
+            echo "$DEPLOY_B64" | base64 -d > /opt/statuspulse/scripts/deploy.sh
+            chmod +x /opt/statuspulse/scripts/deploy.sh
+            cd /opt/statuspulse && bash scripts/deploy.sh rollback
+          ENDSSH
 
       - name: Comment on failure
         if: failure()
