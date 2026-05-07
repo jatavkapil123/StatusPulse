@@ -27,8 +27,7 @@ health_check() {
     log "Health check attempt $i/$retries failed (status=$STATUS), retrying in 5s..."
     sleep 5
   done
-  log "WARNING: Health check failed after $retries attempts, but continuing anyway"
-  return 0  # Changed from return 1 to return 0 to not fail
+  return 1
 }
 
 cd "$DEPLOY_DIR"
