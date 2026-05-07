@@ -38,7 +38,7 @@ statuspulsekapil.duckdns.org {
         -Server
     }
 
-    reverse_proxy localhost:8000
+    reverse_proxy 20.198.8.123:8000
 
     encode gzip
 }
